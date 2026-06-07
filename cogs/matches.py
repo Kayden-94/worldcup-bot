@@ -136,7 +136,7 @@ class MatchesCog(commands.Cog):
         database.set_config('pinned_msg_id', str(msg.id))
 
     def _build_matches_embed(self):
-        matches = database.get_upcoming_matches(limit=10)
+        matches = database.get_upcoming_matches(limit=25)
         embed = discord.Embed(
             title='🌍 Coupe du Monde 2026 — Prochains matchs',
             color=discord.Color.blue(),
