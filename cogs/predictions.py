@@ -130,10 +130,15 @@ class PredictionsCog(commands.Cog):
                 ephemeral=True,
             )
 
+        total = len(preds)
+        preds = preds[:25]
+
         embed = discord.Embed(
             title=f'🎯 Tes pronos — {interaction.user.display_name}',
             color=discord.Color.blurple(),
         )
+        if total > 25:
+            embed.description = f'*Affichage des 25 derniers pronos sur {total} au total.*'
 
         now = datetime.now(timezone.utc)
         for p in preds:
