@@ -4,6 +4,78 @@ from discord.ext import commands
 from datetime import datetime, timezone
 import database
 
+PAGE_SIZE = 10
+
+
+def _build_predictions_embed(username: str, preds: list, page: int, total_pages: int) -> discord.Embed:
+    now = datetime.now(timezone.utc)
+    embed = discord.Embed(
+        title=f'🎯 Tes pronos — {username}',
+        color=discord.Color.blurple(),
+    )
+    embed.set_footer(text=f'Page {page + 1}/{total_pages}')
+
+    for p in preds:
+        match_label = f"{p['home_team']} vs {p['away_team']}"
+        pred_score  = f"{p['home_score']}-{p['away_score']}"
+
+        if p['points_earned'] is not None:
+            real  = f"{p['real_home']}-{p['real_away']}"
+            pts   = p['points_earned']
+            icon  = '✅' if pts > 0 else '❌'
+            s     = 's' if pts != 1 else ''
+            value = f"Prono : **{pred_score}** | Résultat : **{real}** | {icon} +{pts} pt{s}"
+        elif p['status'] == 'live':
+            value = f"Prono : **{pred_score}** | 🔴 En direct"
+        else:
+            try:
+                dt = datetime.fromisoformat(p['match_date'])
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ts    = int(dt.timestamp())
+                value = f"Prono : **{pred_score}** | Dans <t:{ts}:R>"
+            except Exception:
+                value = f"Prono : **{pred_score}**"
+
+        embed.add_field(name=match_label, value=value, inline=False)
+
+    return embed
+
+
+class PredictionsView(discord.ui.View):
+    def __init__(self, username: str, preds: list):
+        super().__init__(timeout=120)
+        self.username = username
+        self.preds = preds
+        self.page = 0
+        self.total_pages = max(1, (len(preds) + PAGE_SIZE - 1) // PAGE_SIZE)
+        self._refresh_buttons()
+
+    def _refresh_buttons(self):
+        self.prev_btn.disabled = self.page == 0
+        self.next_btn.disabled = self.page >= self.total_pages - 1
+
+    def current_embed(self) -> discord.Embed:
+        start = self.page * PAGE_SIZE
+        return _build_predictions_embed(
+            self.username,
+            self.preds[start:start + PAGE_SIZE],
+            self.page,
+            self.total_pages,
+        )
+
+    @discord.ui.button(label='◀ Précédent', style=discord.ButtonStyle.secondary)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page -= 1
+        self._refresh_buttons()
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
+    @discord.ui.button(label='Suivant ▶', style=discord.ButtonStyle.secondary)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page += 1
+        self._refresh_buttons()
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
 
 class PredictionsCog(commands.Cog):
     def __init__(self, bot):
@@ -130,42 +202,12 @@ class PredictionsCog(commands.Cog):
                 ephemeral=True,
             )
 
-        total = len(preds)
-        preds = preds[:25]
-
-        embed = discord.Embed(
-            title=f'🎯 Tes pronos — {interaction.user.display_name}',
-            color=discord.Color.blurple(),
+        view = PredictionsView(interaction.user.display_name, preds)
+        await interaction.response.send_message(
+            embed=view.current_embed(),
+            view=view if view.total_pages > 1 else None,
+            ephemeral=True,
         )
-        if total > 25:
-            embed.description = f'*Affichage des 25 derniers pronos sur {total} au total.*'
-
-        now = datetime.now(timezone.utc)
-        for p in preds:
-            match_label = f"{p['home_team']} vs {p['away_team']}"
-            pred_score  = f"{p['home_score']}-{p['away_score']}"
-
-            if p['points_earned'] is not None:
-                real   = f"{p['real_home']}-{p['real_away']}"
-                pts    = p['points_earned']
-                icon   = '✅' if pts > 0 else '❌'
-                s      = 's' if pts != 1 else ''
-                value  = f"Prono : **{pred_score}** | Résultat : **{real}** | {icon} +{pts} pt{s}"
-            elif p['status'] == 'live':
-                value = f"Prono : **{pred_score}** | 🔴 En direct"
-            else:
-                try:
-                    dt = datetime.fromisoformat(p['match_date'])
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    ts    = int(dt.timestamp())
-                    value = f"Prono : **{pred_score}** | Dans <t:{ts}:R>"
-                except Exception:
-                    value = f"Prono : **{pred_score}**"
-
-            embed.add_field(name=match_label, value=value, inline=False)
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
