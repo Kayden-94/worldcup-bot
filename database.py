@@ -6,7 +6,7 @@ DB_PATH = os.getenv('DB_PATH', 'worldcup.db')
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -56,21 +56,40 @@ def init_db():
 # ── Matches ──────────────────────────────────────────────────────────────────
 
 def upsert_match(match_id, home_team, away_team, match_date, status,
-                 home_score=None, away_score=None):
+                 home_score=None, away_score=None, force=False):
     conn = get_connection()
-    conn.execute('''
-        INSERT INTO matches
-            (match_id, home_team, away_team, home_score, away_score,
-             match_date, status, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(match_id) DO UPDATE SET
-            home_score   = excluded.home_score,
-            away_score   = excluded.away_score,
-            status       = excluded.status,
-            last_updated = excluded.last_updated
-    ''', (match_id, home_team, away_team, home_score, away_score,
-          match_date, status, datetime.utcnow().isoformat()))
-    conn.commit()
+    if force:
+        # Correction manuelle : écrase tout
+        conn.execute('''
+            INSERT INTO matches
+                (match_id, home_team, away_team, home_score, away_score,
+                 match_date, status, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(match_id) DO UPDATE SET
+                home_score   = excluded.home_score,
+                away_score   = excluded.away_score,
+                status       = excluded.status,
+                last_updated = excluded.last_updated
+        ''', (match_id, home_team, away_team, home_score, away_score,
+              match_date, status, datetime.utcnow().isoformat()))
+    else:
+        # Mise à jour API : ne pas écraser un score déjà corrigé (finished)
+        conn.execute('''
+            INSERT INTO matches
+                (match_id, home_team, away_team, home_score, away_score,
+                 match_date, status, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(match_id) DO UPDATE SET
+                home_score   = CASE WHEN matches.status = 'finished'
+                                    THEN matches.home_score
+                                    ELSE excluded.home_score END,
+                away_score   = CASE WHEN matches.status = 'finished'
+                                    THEN matches.away_score
+                                    ELSE excluded.away_score END,
+                status       = excluded.status,
+                last_updated = excluded.last_updated
+        ''', (match_id, home_team, away_team, home_score, away_score,
+              match_date, status, datetime.utcnow().isoformat()))
     conn.close()
 
 
@@ -108,6 +127,47 @@ def get_finished_unprocessed_matches():
     ''').fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def find_match_by_teams(home_team, away_team):
+    conn = get_connection()
+    row = conn.execute(
+        'SELECT * FROM matches WHERE LOWER(home_team) LIKE ? AND LOWER(away_team) LIKE ?',
+        (f'%{home_team.lower()}%', f'%{away_team.lower()}%')
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_all_matches():
+    conn = get_connection()
+    rows = conn.execute(
+        'SELECT * FROM matches ORDER BY match_date DESC'
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def reset_predictions_for_match(match_id):
+    """Soustrait les points déjà attribués et remet points_earned à NULL."""
+    conn = get_connection()
+    preds = conn.execute(
+        'SELECT * FROM predictions WHERE match_id = ? AND points_earned IS NOT NULL',
+        (match_id,)
+    ).fetchall()
+    conn.execute('BEGIN')
+    for pred in preds:
+        conn.execute(
+            'UPDATE users SET total_points = MAX(0, total_points - ?) WHERE discord_id = ?',
+            (pred['points_earned'], pred['discord_id'])
+        )
+    conn.execute(
+        'UPDATE predictions SET points_earned = NULL WHERE match_id = ?',
+        (match_id,)
+    )
+    conn.execute('COMMIT')
+    conn.close()
+    return len(preds)
 
 
 # ── Predictions ───────────────────────────────────────────────────────────────
@@ -169,6 +229,16 @@ def add_user_points(discord_id, points):
     conn = get_connection()
     conn.execute(
         'UPDATE users SET total_points = total_points + ? WHERE discord_id = ?',
+        (points, discord_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_user_points(discord_id, points):
+    conn = get_connection()
+    conn.execute(
+        'UPDATE users SET total_points = ? WHERE discord_id = ?',
         (points, discord_id)
     )
     conn.commit()

@@ -7,6 +7,7 @@ import database
 load_dotenv()
 
 DISCORD_TOKEN = os.environ['DISCORD_TOKEN']
+GUILD_ID = int(os.getenv('GUILD_ID', 0))
 
 
 class WorldCupBot(commands.Bot):
@@ -18,8 +19,14 @@ class WorldCupBot(commands.Bot):
         database.init_db()
         for cog in ('cogs.matches', 'cogs.predictions', 'cogs.leaderboard'):
             await self.load_extension(cog)
-        await self.tree.sync()
-        print('[OK] Commandes slash synchronisees', flush=True)
+        if GUILD_ID:
+            guild = discord.Object(id=GUILD_ID)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            print(f'[OK] Commandes slash synchronisees sur le serveur {GUILD_ID}', flush=True)
+        else:
+            await self.tree.sync()
+            print('[OK] Commandes slash synchronisees (global, peut prendre ~1h)', flush=True)
 
     async def on_ready(self):
         print(f'[OK] Connecte en tant que {self.user} (ID: {self.user.id})', flush=True)

@@ -9,6 +9,7 @@ import scoring
 
 MATCHES_CHANNEL_ID = int(os.getenv('MATCHES_CHANNEL_ID', 0))
 RESULTS_CHANNEL_ID = int(os.getenv('RESULTS_CHANNEL_ID', 0))
+OWNER_ID = int(os.getenv('OWNER_ID', 0))
 
 
 class MatchesCog(commands.Cog):
@@ -180,6 +181,100 @@ class MatchesCog(commands.Cog):
 
         embed = self._build_matches_embed()
         await interaction.followup.send(embed=embed)
+
+    # ── Slash command /setscore (owner) ──────────────────────────────────────
+
+    @app_commands.command(
+        name='setscore',
+        description='[OWNER] Corriger manuellement le score final d\'un match',
+    )
+    @app_commands.describe(
+        match='Choisis le match (tape quelques lettres pour filtrer)',
+        home_score='Buts equipe domicile (score reel)',
+        away_score='Buts equipe exterieure (score reel)',
+        recalculer='Recalculer les points si deja attribues avec le mauvais score',
+    )
+    async def setscore_command(
+        self,
+        interaction: discord.Interaction,
+        match: str,
+        home_score: int,
+        away_score: int,
+        recalculer: bool = False,
+    ):
+        if interaction.user.id != OWNER_ID:
+            return await interaction.response.send_message(
+                'Seul le proprietaire du bot peut utiliser cette commande.',
+                ephemeral=True,
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        if home_score < 0 or away_score < 0:
+            return await interaction.followup.send('Les scores ne peuvent pas etre negatifs.', ephemeral=True)
+
+        db_match = database.get_match(match)
+        if not db_match:
+            return await interaction.followup.send(
+                'Match introuvable. Utilise bien l\'autocompletion pour selectionner le match.',
+                ephemeral=True,
+            )
+
+        reset_count = 0
+        if recalculer:
+            reset_count = database.reset_predictions_for_match(db_match['match_id'])
+
+        database.upsert_match(
+            match_id=db_match['match_id'],
+            home_team=db_match['home_team'],
+            away_team=db_match['away_team'],
+            match_date=db_match['match_date'],
+            status='finished',
+            home_score=home_score,
+            away_score=away_score,
+            force=True,
+        )
+        api._cache.clear()
+
+        lines = [
+            f"**{db_match['home_team']} vs {db_match['away_team']}**",
+            f"Score corrige : **{home_score}-{away_score}**",
+        ]
+        if recalculer:
+            lines.append(f"Points reinitialises pour {reset_count} prono(s).")
+            lines.append('Les points seront recalcules au prochain cycle (max 5 min).')
+        else:
+            lines.append('Utilise recalculer:True si des points avaient deja ete attribues avec le mauvais score.')
+
+        embed = discord.Embed(
+            title='Score corrige',
+            description='\n'.join(lines),
+            color=discord.Color.green(),
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @setscore_command.autocomplete('match')
+    async def _setscore_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ):
+        try:
+            matches = database.get_all_matches()
+            search = (current or '').lower().strip()
+            choices = []
+            for m in matches:
+                label = '{} vs {}'.format(m['home_team'], m['away_team'])
+                if not search or search in label.lower():
+                    score_str = ' ({}-{})'.format(m['home_score'], m['away_score']) if m['home_score'] is not None else ''
+                    choices.append(app_commands.Choice(
+                        name=(label + score_str)[:100],
+                        value=m['match_id'],
+                    ))
+            return choices[:25]
+        except Exception as e:
+            print('[setscore autocomplete] {}'.format(e))
+            return []
 
 
 async def setup(bot):
