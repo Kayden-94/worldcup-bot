@@ -20,7 +20,12 @@ def _build_predictions_embed(username: str, preds: list, page: int, total_pages:
         pred_score  = f"{p['home_score']}-{p['away_score']}"
 
         if p['points_earned'] is not None:
-            real  = f"{p['real_home']}-{p['real_away']}"
+            real = f"{p['real_home']}-{p['real_away']}"
+            pen  = p.get('penalty_winner')
+            if pen == 'home':
+                real += f" a.p. ({p['home_team']})"
+            elif pen == 'away':
+                real += f" a.p. ({p['away_team']})"
             pts   = p['points_earned']
             icon  = '✅' if pts > 0 else '❌'
             s     = 's' if pts != 1 else ''

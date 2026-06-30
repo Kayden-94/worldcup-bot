@@ -15,14 +15,15 @@ def init_db():
     conn = get_connection()
     conn.executescript('''
         CREATE TABLE IF NOT EXISTS matches (
-            match_id     TEXT PRIMARY KEY,
-            home_team    TEXT NOT NULL,
-            away_team    TEXT NOT NULL,
-            home_score   INTEGER,
-            away_score   INTEGER,
-            match_date   TEXT NOT NULL,
-            status       TEXT DEFAULT 'scheduled',
-            last_updated TEXT
+            match_id       TEXT PRIMARY KEY,
+            home_team      TEXT NOT NULL,
+            away_team      TEXT NOT NULL,
+            home_score     INTEGER,
+            away_score     INTEGER,
+            match_date     TEXT NOT NULL,
+            status         TEXT DEFAULT 'scheduled',
+            last_updated   TEXT,
+            penalty_winner TEXT
         );
 
         CREATE TABLE IF NOT EXISTS users (
@@ -50,46 +51,56 @@ def init_db():
         );
     ''')
     conn.commit()
+    # Migration : ajoute la colonne si la DB existait avant cette version
+    try:
+        conn.execute('ALTER TABLE matches ADD COLUMN penalty_winner TEXT')
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
 # ── Matches ──────────────────────────────────────────────────────────────────
 
 def upsert_match(match_id, home_team, away_team, match_date, status,
-                 home_score=None, away_score=None, force=False):
+                 home_score=None, away_score=None, penalty_winner=None, force=False):
     conn = get_connection()
+    now = datetime.utcnow().isoformat()
     if force:
-        # Correction manuelle : écrase tout
         conn.execute('''
             INSERT INTO matches
                 (match_id, home_team, away_team, home_score, away_score,
-                 match_date, status, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 match_date, status, last_updated, penalty_winner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(match_id) DO UPDATE SET
-                home_score   = excluded.home_score,
-                away_score   = excluded.away_score,
-                status       = excluded.status,
-                last_updated = excluded.last_updated
+                home_score     = excluded.home_score,
+                away_score     = excluded.away_score,
+                status         = excluded.status,
+                last_updated   = excluded.last_updated,
+                penalty_winner = excluded.penalty_winner
         ''', (match_id, home_team, away_team, home_score, away_score,
-              match_date, status, datetime.utcnow().isoformat()))
+              match_date, status, now, penalty_winner))
     else:
         # Mise à jour API : ne pas écraser un score déjà corrigé (finished)
         conn.execute('''
             INSERT INTO matches
                 (match_id, home_team, away_team, home_score, away_score,
-                 match_date, status, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 match_date, status, last_updated, penalty_winner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(match_id) DO UPDATE SET
-                home_score   = CASE WHEN matches.status = 'finished'
-                                    THEN matches.home_score
-                                    ELSE excluded.home_score END,
-                away_score   = CASE WHEN matches.status = 'finished'
-                                    THEN matches.away_score
-                                    ELSE excluded.away_score END,
-                status       = excluded.status,
-                last_updated = excluded.last_updated
+                home_score     = CASE WHEN matches.status = 'finished'
+                                      THEN matches.home_score
+                                      ELSE excluded.home_score END,
+                away_score     = CASE WHEN matches.status = 'finished'
+                                      THEN matches.away_score
+                                      ELSE excluded.away_score END,
+                penalty_winner = CASE WHEN matches.status = 'finished'
+                                      THEN matches.penalty_winner
+                                      ELSE excluded.penalty_winner END,
+                status         = excluded.status,
+                last_updated   = excluded.last_updated
         ''', (match_id, home_team, away_team, home_score, away_score,
-              match_date, status, datetime.utcnow().isoformat()))
+              match_date, status, now, penalty_winner))
     conn.close()
 
 
@@ -197,7 +208,8 @@ def get_user_predictions(discord_id):
     rows = conn.execute('''
         SELECT p.*,
                m.home_team, m.away_team, m.match_date, m.status,
-               m.home_score AS real_home, m.away_score AS real_away
+               m.home_score AS real_home, m.away_score AS real_away,
+               m.penalty_winner
         FROM predictions p
         JOIN matches m ON p.match_id = m.match_id
         WHERE p.discord_id = ?

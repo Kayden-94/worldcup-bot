@@ -60,16 +60,33 @@ async def get_recent_matches(days_back=2):
 
 
 def _normalize(m):
-    score = m.get('score', {})
-    full  = score.get('fullTime', {})
+    score    = m.get('score', {})
+    duration = score.get('duration', 'REGULAR')
+    full     = score.get('fullTime', {})
+
+    penalty_winner = None
+    if duration == 'PENALTY_SHOOTOUT':
+        # L'API met parfois le score des pénaltés dans fullTime.
+        # On préfère regularTime (90 min) ou extraTime (120 min) pour le vrai score buts.
+        real = score.get('regularTime') or score.get('extraTime') or full
+        # score.winner indique qui a réellement gagné le match (TAB inclus)
+        api_winner = score.get('winner', '')
+        if api_winner == 'HOME_TEAM':
+            penalty_winner = 'home'
+        elif api_winner == 'AWAY_TEAM':
+            penalty_winner = 'away'
+    else:
+        real = full
+
     return {
-        'match_id':   str(m.get('id', '')),
-        'home_team':  (m.get('homeTeam') or {}).get('shortName', 'TBD'),
-        'away_team':  (m.get('awayTeam') or {}).get('shortName', 'TBD'),
-        'home_score': full.get('home'),
-        'away_score': full.get('away'),
-        'match_date': _parse_date(m.get('utcDate', '')),
-        'status':     _normalize_status(m.get('status', '')),
+        'match_id':       str(m.get('id', '')),
+        'home_team':      (m.get('homeTeam') or {}).get('shortName', 'TBD'),
+        'away_team':      (m.get('awayTeam') or {}).get('shortName', 'TBD'),
+        'home_score':     real.get('home'),
+        'away_score':     real.get('away'),
+        'match_date':     _parse_date(m.get('utcDate', '')),
+        'status':         _normalize_status(m.get('status', '')),
+        'penalty_winner': penalty_winner,
     }
 
 

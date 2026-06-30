@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timezone
+from typing import Literal, Optional
 import os
 import api
 import database
@@ -67,6 +68,7 @@ class MatchesCog(commands.Cog):
             pts = scoring.calculate_points(
                 pred['home_score'], pred['away_score'],
                 match['home_score'], match['away_score'],
+                penalty_winner=match.get('penalty_winner'),
             )
             database.set_prediction_points(pred['id'], pts)
             database.add_user_points(pred['discord_id'], pts)
@@ -88,6 +90,12 @@ class MatchesCog(commands.Cog):
             return
 
         real = f"{match['home_score']}-{match['away_score']}"
+        pen = match.get('penalty_winner')
+        if pen == 'home':
+            real += f" a.p. ({match['home_team']} gagne aux TAB)"
+        elif pen == 'away':
+            real += f" a.p. ({match['away_team']} gagne aux TAB)"
+
         embed = discord.Embed(
             title=f"⚽ {match['home_team']} vs {match['away_team']}",
             description=f"**Score final : {real}**",
@@ -190,9 +198,10 @@ class MatchesCog(commands.Cog):
     )
     @app_commands.describe(
         match='Choisis le match (tape quelques lettres pour filtrer)',
-        home_score='Buts equipe domicile (score reel)',
-        away_score='Buts equipe exterieure (score reel)',
+        home_score='Buts equipe domicile (score reel, hors TAB)',
+        away_score='Buts equipe exterieure (score reel, hors TAB)',
         recalculer='Recalculer les points si deja attribues avec le mauvais score',
+        vainqueur_tab='Si match nul aux TAB : home = domicile, away = exterieure',
     )
     async def setscore_command(
         self,
@@ -201,6 +210,7 @@ class MatchesCog(commands.Cog):
         home_score: int,
         away_score: int,
         recalculer: bool = False,
+        vainqueur_tab: Optional[Literal['home', 'away']] = None,
     ):
         if interaction.user.id != OWNER_ID:
             return await interaction.response.send_message(
@@ -224,6 +234,12 @@ class MatchesCog(commands.Cog):
         if recalculer:
             reset_count = database.reset_predictions_for_match(db_match['match_id'])
 
+        if vainqueur_tab and home_score != away_score:
+            return await interaction.followup.send(
+                'vainqueur_tab uniquement si le score est nul (match aux TAB).',
+                ephemeral=True,
+            )
+
         database.upsert_match(
             match_id=db_match['match_id'],
             home_team=db_match['home_team'],
@@ -232,13 +248,20 @@ class MatchesCog(commands.Cog):
             status='finished',
             home_score=home_score,
             away_score=away_score,
+            penalty_winner=vainqueur_tab,
             force=True,
         )
         api._cache.clear()
 
+        score_str = f"{home_score}-{away_score}"
+        if vainqueur_tab == 'home':
+            score_str += f" a.p. ({db_match['home_team']} gagne aux TAB)"
+        elif vainqueur_tab == 'away':
+            score_str += f" a.p. ({db_match['away_team']} gagne aux TAB)"
+
         lines = [
             f"**{db_match['home_team']} vs {db_match['away_team']}**",
-            f"Score corrige : **{home_score}-{away_score}**",
+            f"Score corrige : **{score_str}**",
         ]
         if recalculer:
             lines.append(f"Points reinitialises pour {reset_count} prono(s).")
