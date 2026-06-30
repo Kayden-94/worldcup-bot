@@ -201,7 +201,7 @@ class MatchesCog(commands.Cog):
         home_score='Buts equipe domicile (score reel, hors TAB)',
         away_score='Buts equipe exterieure (score reel, hors TAB)',
         recalculer='Recalculer les points si deja attribues avec le mauvais score',
-        vainqueur_tab='TAB : none = match normal, home = domicile gagne, away = exterieure gagne',
+        vainqueur_tab='TAB : tape none/home/away ou choisis dans la liste',
     )
     async def setscore_command(
         self,
@@ -209,7 +209,7 @@ class MatchesCog(commands.Cog):
         match: str,
         home_score: int,
         away_score: int,
-        vainqueur_tab: Literal['none', 'home', 'away'],
+        vainqueur_tab: str,
         recalculer: bool = False,
     ):
         if interaction.user.id != OWNER_ID:
@@ -234,6 +234,10 @@ class MatchesCog(commands.Cog):
         if recalculer:
             reset_count = database.reset_predictions_for_match(db_match['match_id'])
 
+        if vainqueur_tab not in ('none', 'home', 'away'):
+            return await interaction.followup.send(
+                'vainqueur_tab doit etre none, home ou away.', ephemeral=True
+            )
         pen = vainqueur_tab if vainqueur_tab != 'none' else None
         if pen and home_score != away_score:
             return await interaction.followup.send(
@@ -276,6 +280,19 @@ class MatchesCog(commands.Cog):
             color=discord.Color.green(),
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @setscore_command.autocomplete('vainqueur_tab')
+    async def _vainqueur_tab_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ):
+        options = [
+            app_commands.Choice(name='Aucun TAB (match normal)', value='none'),
+            app_commands.Choice(name='Domicile gagne aux TAB', value='home'),
+            app_commands.Choice(name='Exterieure gagne aux TAB', value='away'),
+        ]
+        return [c for c in options if current.lower() in c.name.lower() or current == '']
 
     @setscore_command.autocomplete('match')
     async def _setscore_autocomplete(
