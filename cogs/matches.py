@@ -201,8 +201,13 @@ class MatchesCog(commands.Cog):
         home_score='Buts equipe domicile (score reel, hors TAB)',
         away_score='Buts equipe exterieure (score reel, hors TAB)',
         recalculer='Recalculer les points si deja attribues avec le mauvais score',
-        vainqueur_tab='Si match nul aux TAB : home = domicile, away = exterieure',
+        vainqueur_tab='Vainqueur aux TAB (choisir "aucun" si match normal)',
     )
+    @app_commands.choices(vainqueur_tab=[
+        app_commands.Choice(name='Aucun TAB (match normal)', value='none'),
+        app_commands.Choice(name='Equipe domicile (home)', value='home'),
+        app_commands.Choice(name='Equipe exterieure (away)', value='away'),
+    ])
     async def setscore_command(
         self,
         interaction: discord.Interaction,
@@ -210,7 +215,7 @@ class MatchesCog(commands.Cog):
         home_score: int,
         away_score: int,
         recalculer: bool = False,
-        vainqueur_tab: Optional[Literal['home', 'away']] = None,
+        vainqueur_tab: str = 'none',
     ):
         if interaction.user.id != OWNER_ID:
             return await interaction.response.send_message(
@@ -234,7 +239,8 @@ class MatchesCog(commands.Cog):
         if recalculer:
             reset_count = database.reset_predictions_for_match(db_match['match_id'])
 
-        if vainqueur_tab and home_score != away_score:
+        pen = vainqueur_tab if vainqueur_tab != 'none' else None
+        if pen and home_score != away_score:
             return await interaction.followup.send(
                 'vainqueur_tab uniquement si le score est nul (match aux TAB).',
                 ephemeral=True,
@@ -248,15 +254,15 @@ class MatchesCog(commands.Cog):
             status='finished',
             home_score=home_score,
             away_score=away_score,
-            penalty_winner=vainqueur_tab,
+            penalty_winner=pen,
             force=True,
         )
         api._cache.clear()
 
         score_str = f"{home_score}-{away_score}"
-        if vainqueur_tab == 'home':
+        if pen == 'home':
             score_str += f" a.p. ({db_match['home_team']} gagne aux TAB)"
-        elif vainqueur_tab == 'away':
+        elif pen == 'away':
             score_str += f" a.p. ({db_match['away_team']} gagne aux TAB)"
 
         lines = [
