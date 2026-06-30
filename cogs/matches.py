@@ -201,12 +201,12 @@ class MatchesCog(commands.Cog):
         home_score='Buts equipe domicile (score reel, hors TAB)',
         away_score='Buts equipe exterieure (score reel, hors TAB)',
         recalculer='Recalculer les points si deja attribues avec le mauvais score',
-        vainqueur_tab='Vainqueur aux TAB (choisir "aucun" si match normal)',
+        vainqueur_tab='TAB : choisir "aucun" si match normal, sinon domicile ou exterieure',
     )
     @app_commands.choices(vainqueur_tab=[
         app_commands.Choice(name='Aucun TAB (match normal)', value='none'),
-        app_commands.Choice(name='Equipe domicile (home)', value='home'),
-        app_commands.Choice(name='Equipe exterieure (away)', value='away'),
+        app_commands.Choice(name='Domicile gagne aux TAB', value='home'),
+        app_commands.Choice(name='Exterieure gagne aux TAB', value='away'),
     ])
     async def setscore_command(
         self,
@@ -214,8 +214,8 @@ class MatchesCog(commands.Cog):
         match: str,
         home_score: int,
         away_score: int,
+        vainqueur_tab: str,
         recalculer: bool = False,
-        vainqueur_tab: str = 'none',
     ):
         if interaction.user.id != OWNER_ID:
             return await interaction.response.send_message(
