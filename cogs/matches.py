@@ -30,7 +30,10 @@ class MatchesCog(commands.Cog):
         try:
             matches = await api.get_upcoming_matches(days=14)
             for m in matches:
-                database.upsert_match(**m)
+                try:
+                    database.upsert_match(**m)
+                except Exception as e:
+                    print(f'[refresh_loop] upsert {m.get("match_id")}: {e}')
             await self._update_pinned_embed()
         except Exception as e:
             print(f'[refresh_loop] {e}')
@@ -46,7 +49,10 @@ class MatchesCog(commands.Cog):
         try:
             recent = await api.get_recent_matches(days_back=2)
             for m in recent:
-                database.upsert_match(**m)
+                try:
+                    database.upsert_match(**m)
+                except Exception as e:
+                    print(f'[results_loop] upsert {m.get("match_id")}: {e}')
 
             for match in database.get_finished_unprocessed_matches():
                 if match['status'] == 'finished':
@@ -183,7 +189,10 @@ class MatchesCog(commands.Cog):
         try:
             matches = await api.get_upcoming_matches(days=14)
             for m in matches:
-                database.upsert_match(**m)
+                try:
+                    database.upsert_match(**m)
+                except Exception as e:
+                    print(f'[/matchs] upsert {m.get("match_id")}: {e}')
         except Exception as e:
             print(f'[/matchs] API error: {e}')
 

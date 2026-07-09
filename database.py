@@ -88,6 +88,8 @@ def upsert_match(match_id, home_team, away_team, match_date, status,
                  match_date, status, last_updated, penalty_winner)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(match_id) DO UPDATE SET
+                home_team      = excluded.home_team,
+                away_team      = excluded.away_team,
                 home_score     = CASE WHEN matches.status = 'finished'
                                       THEN matches.home_score
                                       ELSE excluded.home_score END,

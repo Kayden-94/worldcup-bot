@@ -80,8 +80,8 @@ def _normalize(m):
 
     return {
         'match_id':       str(m.get('id', '')),
-        'home_team':      (m.get('homeTeam') or {}).get('shortName', 'TBD'),
-        'away_team':      (m.get('awayTeam') or {}).get('shortName', 'TBD'),
+        'home_team':      (m.get('homeTeam') or {}).get('shortName') or 'TBD',
+        'away_team':      (m.get('awayTeam') or {}).get('shortName') or 'TBD',
         'home_score':     real.get('home'),
         'away_score':     real.get('away'),
         'match_date':     _parse_date(m.get('utcDate', '')),
